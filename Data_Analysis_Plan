@@ -1,0 +1,68 @@
+1. Data Loading and Preprocessing
+  - for each data set load RNA-data with scanpy.read_10x_mtx() and the corresponding TCR-data with scirpy.read_10x_vdj()
+  - for each data set merge the two different data type through scirpy.pp.merge_with_tcr()
+  - assign sample, batch and tissue type labels to data set
+  - merge all scanpy objects of data sets into a single scanpy object
+ 
+2. QC and Filterng
+ 2.1 QC metrics
+   - use scanpy.pp.calculate_qc_metrics() to compute QC metrics: 'n_cells_by_counts', 'mean_counts', 'log1p_mean_counts', 'pct_dropout_by_counts', 'total_counts', 'log1p_total_counts'
+   - compute (i)total number of reads for each cell (ii) percentage of mitochondrial genes for each cell (iii) percentage ribosomal genes for each cell
+   
+ 2.2 Bulk Filtering
+   - filter out cells that express less than 200 genes
+   - filter out genes that are expressed in less than 3 cells
+   
+ 2.3 Sample-wise filtering
+   - visualize (i)(ii)(iii) though violin plots and filter out cells that have too many reads, too high mitochondrial genes and too low ribosomal genes (whether or not to describe specific thresholds for each data set?)
+   
+ 2.4 Genewise filtering
+   - remove ribosomal, mitochondrial genes and MALAT1 gene
+   
+ 2.5 TCR-data QC and filtering
+   - visualize the counts for TCR chains --- # of cells with no TCR, one pair of TCR chains, two pair of TCR chains etc.
+   - filtering out the cells that have more than two pairs of TCR chains
+ 
+3. Cell Subsetting and Dimension Reduction
+ 3.1 Subset T cells from all cells
+   - select all TCR and CD8 genes that exist in our samples and start with "TRAV","TRAJ","TRBV","TRBD","TRBJ","CD8A","CD8B", there are 160 genes in total
+   - subset cells that express any of the above genes  (or equivalently speaking, exclude cells that TCR- and CD8-)
+   - regress out the number of reads per cell to make library size the same across all cells
+   - Scale data to unit variance and zero mean and truncate above 10 standard deviation
+   
+ 3.2 Gene space dimension reduction
+ In this step we choose a smaller number of the genes for downstream analysis
+   - select top 200 highly variable genes
+   - make sure that all of the important cell markers are added back to the list in case they have been filtered out by the highly variable genes detection algorithm
+   - genes provide by Anna Maria: 'CD8A','CD8B','PTPRC','TBX21','CCR5','CXCR3','IL7','SELL','GATA3','CCR6','IL4','GZMB',
+                                  'PRF1','IL2RB','IL2RA','FOXP3','CD28','IL10','CD44','EOMES','IL17A','IL17B','IL17C','IL10'
+   - Memory T cell genes found in papers: 'FAS','IFNG','KLRG1','ITGAL','ITGB2','ITGB1','ITGAM','ITGA4','CCR7'
+   - exhaustion markers: 'CXCL13','CTLA4','PDCD1','HAVCR2','TIGIT','BTLA','CD244','CD160','ICOS'
+   - proliferation markers: 'TOP2A','MKI67','TNFRSF9'
+   Genes used for downstream clustering analysis is the union of all genes mentioned here plus 200 top variable genes
+   
+ 3.3 PCA
+   - use ARPACK algorithm to perform PCA
+   - use scree plot to determine the 'best' number of PC's to keep (80 in our case)
+   
+ 3.4 Determine if we need batch correction
+   - deep copy all data 
+   - perform batch correction on one of the data copy, we use BBKNN algorithm which will both make batch alignment and build neighbor graph
+   - on the other data copy, do not perform batch correction use the neibor graph constructor scanpy.pp.neighbors() implemented in scanpy 
+  to compute neighbor graph 
+   - run UMAP and Leiden with the same parameters min_dist=0.05 to construct 2D projection maps
+   - based on the result, it seems that there is no need for batch correction and the clustering for the raw copy is better
+   
+ 3.4 UMAP
+   - derive UMAP from the neighbor graph produced by BBKNN algorithm, set min_dist=0.1
+   - perform Leiden clustering algorithm
+   - rank genes that characterize each cluster, based on T-scores
+   
+4. UMAP visualization
+ 4.1 Visualize by tissue types
+ 4.2 Visualize by batches
+ 4.3 Visualize by enrichment methods
+ 4.4 Visualiza the distribution of proliferation markers
+ 4.5 Visualize the distribution of exhaustion markers
+   
+   
