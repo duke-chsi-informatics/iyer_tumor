@@ -2,9 +2,9 @@
   - for each data set load RNA-data with scanpy.read_10x_mtx() and the corresponding TCR-data with scirpy.read_10x_vdj()
   - for each data set merge the two different data type through scirpy.pp.merge_with_tcr()
   - assign sample, batch and tissue type labels to data set
-  - merge all scanpy objects of data sets into a single scanpy object
+  - merge all scanpy objects of data sets into a single scanpy object that contains data for all samples
  
-2. QC and Filterng
+2. QC and Filtering
  2.1 QC metrics
    - use scanpy.pp.calculate_qc_metrics() to compute QC metrics: 'n_cells_by_counts', 'mean_counts', 'log1p_mean_counts', 'pct_dropout_by_counts', 'total_counts', 'log1p_total_counts'
    - compute (i)total number of reads for each cell (ii) percentage of mitochondrial genes for each cell (iii) percentage ribosomal genes for each cell
@@ -32,37 +32,73 @@
    
  3.2 Gene space dimension reduction
  In this step we choose a smaller number of the genes for downstream analysis
-   - select top 200 highly variable genes
-   - make sure that all of the important cell markers are added back to the list in case they have been filtered out by the highly variable genes detection algorithm
-   - genes provide by Anna Maria: 'CD8A','CD8B','PTPRC','TBX21','CCR5','CXCR3','IL7','SELL','GATA3','CCR6','IL4','GZMB',
-                                  'PRF1','IL2RB','IL2RA','FOXP3','CD28','IL10','CD44','EOMES','IL17A','IL17B','IL17C','IL10'
-   - Memory T cell genes found in papers: 'FAS','IFNG','KLRG1','ITGAL','ITGB2','ITGB1','ITGAM','ITGA4','CCR7'
-   - exhaustion markers: 'CXCL13','CTLA4','PDCD1','HAVCR2','TIGIT','BTLA','CD244','CD160','ICOS'
-   - proliferation markers: 'TOP2A','MKI67','TNFRSF9'
-   Genes used for downstream clustering analysis is the union of all genes mentioned here plus 200 top variable genes
-   
- 3.3 PCA
+   - select top 200 highly variable genes for downstream analysis (including clustering with UMAP, cluster labelling)
+   - Inject all of the important marker genes and important non-marker genes, in case they have been filtered out by the highly variable genes detection algorithm
+   Genes used for downstream analysis is the union of all genes mentioned here plus 200 top variable genes
+ 3.3 Regressing out cell-cycle
+   - obtain the cell-cycle genes from online study and regress them out by first compute the score of each of them with sc.tl.score_genes_cell_cycle(), second regressing out by the scores computed
+
+ 3.4 PCA
    - use ARPACK algorithm to perform PCA
-   - use scree plot to determine the 'best' number of PC's to keep (80 in our case)
+   - choose 35 PC for downstream clustering
+   - To determine the optimal PC usage, compute rand-indeces for UMAP clusterings with neighboring PC usages. Plotting the rand-indeces and we can see that it plateaus at around 35 PC
    
- 3.4 Determine if we need batch correction
-   - deep copy all data 
-   - perform batch correction on one of the data copy, we use BBKNN algorithm which will both make batch alignment and build neighbor graph
-   - on the other data copy, do not perform batch correction use the neibor graph constructor scanpy.pp.neighbors() implemented in scanpy 
-  to compute neighbor graph 
-   - run UMAP and Leiden with the same parameters min_dist=0.05 to construct 2D projection maps
-   - based on the result, it seems that there is no need for batch correction and the clustering for the raw copy is better
+ 3.5 Batch correction 
+   - perform batch correction on one of the data copy, we use sc.external.pp.bbknn() to do this which is a wrapper for Batch Balanced K-Nearest-Neighbor algorithm 
+   - BBKNN also creates a neighbor-graph that allows the run of UMAP  
    
- 3.4 UMAP
-   - derive UMAP from the neighbor graph produced by BBKNN algorithm, set min_dist=0.1
+ 3.6 UMAP
+   - derive UMAP from the neighbor graph produced by BBKNN algorithm, set min_dist=0.05
    - perform Leiden clustering algorithm
    - rank genes that characterize each cluster, based on T-scores
    
 4. UMAP visualization
- 4.1 Visualize by tissue types
- 4.2 Visualize by batches
- 4.3 Visualize by enrichment methods
- 4.4 Visualiza the distribution of proliferation markers
- 4.5 Visualize the distribution of exhaustion markers
+ 4.0 The grand UMAP for all samples
+ 4.1 Distribution of cells by tissue types
+ 4.2 Distribution of cells by batches
+ 4.3 Distribution of cells by samples
+ 4.4 Distribution of genes by cell-cycles
+ 4.4 Heatmaps of proliferation markers
+ 4.5 Heatmaps of exhaustion markers
+ 4.6 Heatmaps of an array of requested genes (for labelling)
+
+5. Cluster labelling (done mostly under the guidance of Hong-Sheng)
+ - score genes in each cluster based on Differential Expression Tests (here we use all genes originally in all samples, instead of using the subset of genes for the clustering purpose)
+ - based on the marker genes picked up in the above step and the gene heatmaps, we label the clusters
+
+6. Subsetting Cells of Interest
+ - choose subsets of the CTL cells
+ - choose subsets of the memory T cells
+ - export the count matrices for these trajectories for downstream pseudotime analysis
+
+7. TSCAN for pseudotime reconstruction
+ - read in the trajectories and their correponding count matrix
+ - use TSCAN to create minimal spanning tree and projecting cells and clusters onto the tree stem
+ - export pseudotime and trajectories for further uses
+
+8. TCR QC
+ - Examine the distribution of cells with TCR among the UMAP for a sanity check (the distribution of TCR should be compared with CD8, CD4 and CD45 gene heatmaps)
+
+9. Clonotypes analysis
+ 9.1 Clonotype Network Construction
+  - compute clonotype neibor-graph with ir.pp.ir_neighbors()
+  - based on the neighbor-graph, compute clonotype clusters with ir.tl.define_clonotype_clusters(). Due to the fact that the clonotype motifs are short-sequences, we use identity metric for clustering.
+  - Visualize the distribution of clonotypes by tissue types
+  - Visualize the distribution of clonotypes by samples
+ 9.2 Clonotype Expansion and Diversity
+  - compute the clonotype expansion with ir.tl.clonal_expansion()
+  - Draw heapmap the clonal expansion by tissue types
+  - Draw bar plots to show clonal expansion by samples (bar plot show the percentage of clonally expanded cells in each sample)
+  - Draw bar plots to show most frequent clonotypes among all samples, color them by tissue type
+  - Draw group abundance plot with shows the clonotype abundancy in each sample
+  - compute clonal similarity for sanity check (samples from same subject should have more similar clonal repertoire)
+  - compute clonal diversity based on Shannon entropy
+ 9.3 Most Frequent Clonal Types
+  - plot the top 5 most frequent clonotypes
+  - find the host samples for the most frequent clonotypes
+  - choose the paired samples () and plot the shared clonotypes and exclusive clonotypes on the pair (used to help infer trajectories)
+  - overlay the samples, clonotypes along the trajectories
+ 
+10. 
    
    
